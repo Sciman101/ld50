@@ -5,19 +5,39 @@ local mainCanvas, canvasWidth, canvasHeight
 
 local loadStrip = require('loadStrip')
 
-local StructureTextures = {
-    scrap = love.graphics.newImage('assets/scrap.png'),
-    laser = love.graphics.newImage('assets/laser.png'),
-    button = love.graphics.newImage('assets/button.png'),
-    block = love.graphics.newImage('assets/block.png'),
-    rocket = love.graphics.newImage('assets/rocket.png'),
+-- Load fonts
+local Fonts = {
+    monogram = love.graphics.newFont("assets/monogram.ttf",16)
 }
-local PlayerTex = love.graphics.newImage('assets/player.png')
+
+-- Music
+local Music = {
+    love.audio.newSource('assets/music/crusher_calm.ogg','stream'),
+    love.audio.newSource('assets/music/crusher_mid.ogg','stream'),
+    love.audio.newSource('assets/music/crusher_extreme.ogg','stream'),
+    targetTrack = 1,
+    currentTrack = 1,
+    fadeProgress = 0
+}
+
+local Sfx = {
+    progress = love.audio.newSource('assets/sfx/progress.wav','static')
+}
+
+local StructureSprites = {
+    scrap = loadStrip('assets/structures/Scrap.png',1),
+    laser = loadStrip('assets/structures/Laser.png',4),
+    block = loadStrip('assets/structures/Block.png',1),
+    rocket = loadStrip('assets/structures/Rocket.png',1),
+    button = loadStrip('assets/structures/Lever.png',5),
+}
 local PlayerSprites = {
     fwd = loadStrip('assets/player/PlayerForward.png',4),
     back = loadStrip('assets/player/PlayerBackward.png',4),
     right = loadStrip('assets/player/PlayerRight.png',4),
 }
+local WallTex = love.graphics.newImage('assets/wall/Wall.png')
+local GearTex = love.graphics.newImage('assets/wall/Gear.png')
 
 local BuildInfo = {
     q = {
@@ -28,7 +48,7 @@ local BuildInfo = {
         cost=3,
         type='block'
     },
-    r = {
+    e = {
         cost=4,
         type='rocket'
     }
@@ -36,47 +56,48 @@ local BuildInfo = {
 local StructInfo = {
     scrap = {
         health = 5,
-        width = 130,
-        height = 40,
-        ox = 70,
-        oy = 20
+        width = 48,
+        height = 38,
+        ox = 24,
+        oy = 38
     },
     button = {
-        health = 250,
-        width = 130,
-        height = 40,
-        ox = 70,
-        oy = 20
+        health = 5,
+        width = 48,
+        height = 64,
+        ox = 0,
+        oy = 81
     },
     laser = {
-        health = 25,
-        width = 130,
-        height = 40,
-        ox = 70,
-        oy = 20
+        health = 2.5,
+        width = 48,
+        height = 38,
+        ox = 24,
+        oy = 38
     },
     block = {
-        health = 100,
-        width = 80,
-        height = 40,
-        ox = 70,
-        oy = 20
+        health = 10,
+        width = 42,
+        height = 30,
+        ox = 24,
+        oy = 36
     },
     rocket = {
-        health = 1,
-        width = 80,
-        height = 40,
-        ox = 70,
-        oy = 20
+        health = 0.05,
+        width = 42,
+        height = 14,
+        ox = 48,
+        oy = 18
     },
 }
 
 local theWall = 0
 local wallHit = 0
-local wallSpeed = 10
-local player = {x=80, y=80, spd=160, hoverStruct=nil, buildProgress=0, scrapCount=0, dir=0, frame=1, wasMoving=false}
+local wallSpeed = 5
+local player = {x=80, y=80, spd=160, hoverStruct=nil, buildProgress=0, scrapCount=50, dir=0, frame=1, wasMoving=false}
 
 local timeAlive = 0
+local alarm = false
 
 local structures = {}
 
@@ -89,7 +110,15 @@ function love.load()
 
     -- load some initial scrap
     summonScrap()
-    addStructure(2,canvasHeight/2,'button')
+    addStructure(0,canvasHeight/2+24,'button')
+
+    -- Start music
+    for i=1,3 do
+        Music[i]:play()
+        Music[i]:setVolume(0)
+        Music[i]:setLooping(true)
+    end
+    Music[1]:setVolume(1)
 end
 
 -- try and place a structure
@@ -109,6 +138,13 @@ end
 
 function kill()
     love.event.quit()
+end
+
+function switchTrack(track)
+    Music.currentTrack = track
+    if Music.currentTrack ~= Music.targetTrack then
+        fadeProgress = 1
+    end
 end
 
 function love.update(dt)
@@ -153,6 +189,13 @@ function love.update(dt)
     if love.keyboard.isDown('space') then
         if player.hoverStruct then
             player.buildProgress = player.buildProgress + dt * 0.5
+            if not Sfx.progress:isPlaying() then
+                Sfx.progress:play()
+            end
+
+            if player.hoverStruct.type == 'button' then
+                player.hoverStruct.frame = player.buildProgress * 4 + 2
+            end
 
             -- check for building completion
             if player.buildProgress >= 1 then
@@ -171,7 +214,13 @@ function love.update(dt)
 
                 player.hoverStruct = nil
                 player.buildProgress = 0
+                Sfx.progress:stop()
             end
+        end
+    else
+        player.buildProgress = 0
+        if Sfx.progress:isPlaying() then
+            Sfx.progress:stop()
         end
     end
 
@@ -185,43 +234,56 @@ function love.update(dt)
     -- loop structs
     local structsToRemove = {}
     for i=#structures,1,-1 do
-        local struct = structures[i] 
+        local struct = structures[i]
+
+        if struct.type ~= 'button' then
+            local sprite = StructureSprites[struct.type]
+            if sprite and #sprite.frames > 1 then
+                struct.frame = struct.frame + dt * 10
+                if struct.frame > #sprite.frames+1 then
+                    struct.frame = 1
+                end
+            end
+        end
 
         -- Structure behaviours
         if not struct.unfinished then
             -- laser kill
             if struct.type == 'laser' then
                 speedMod = speedMod * 0.75
-                if player.x > struct.x + 130 and player.y > struct.y and player.y < struct.y + 48 then
+                --[[if player.x > struct.x + 20 and player.y > struct.y-31 and player.y < struct.y - 23 then
                     kill()
-                end
+                end]]
             end
 
             -- rocket move
             if struct.type == 'rocket' then
-                struct.x = struct.x + 250 * dt
+                struct.speed = (struct.speed or 0) + dt * 200
+                struct.x = struct.x + struct.speed* dt
             end
         end
 
         -- overlap the player
         if not player.hoverStruct then
-            if struct.unfinished or struct.type == 'scrap' or struct.type=='button' then
+            if struct.unfinished or (struct.type == 'scrap') or struct.type=='button' then
                 -- check for player overlap
-                if player.x > struct.x-struct.ox and player.y > struct.y-struct.oy and player.x < struct.x + struct.width - struct.ox and player.y < struct.y - struct.oy + struct.width then
+                if player.x > struct.x-struct.ox and player.y > struct.y-struct.oy+struct.height*0.5 and player.x < struct.x + struct.width - struct.ox and player.y < struct.y - struct.oy + struct.height*1.5 then
                     player.hoverStruct = struct
                 end
             end
         end
 
         -- push or destroy structures
+        struct.damaging = false
         if struct.x - struct.ox + struct.width > getWallX() then
             if struct.type == 'scrap' then
                 -- push
-                struct.x = getWallX() - 130
+                struct.x = getWallX() - struct.ox
             else
-                if struct.health > 0 and not unfinished then
+                if struct.health > 0 and not struct.unfinished then
                     speedMod = 0
-                    struct.health = struct.health - dt * 5
+                    struct.health = struct.health - dt
+                    struct.damaging = true
                 else
                     -- destroy
                     if struct.type == 'rocket' and not struct.unfinished then
@@ -238,23 +300,46 @@ function love.update(dt)
     end
 
     -- death
-    if player.x > getWallX()-8 then
-        kill()
+    if player.x + 16 > getWallX() then
+        player.x = getWallX() - 16
+        if player.x < 8 then
+            kill()
+        end
     end
 
+    -- Increment time
     timeAlive = timeAlive + dt
 
     -- move in the wall
     if wallHit <= 0 then
         theWall = theWall + wallSpeed * dt * speedMod
-        wallSpeed = wallSpeed + dt * 0.1
+        wallSpeed = wallSpeed + dt * 0.05
+
+        if theWall > canvasWidth*0.3 and Music.currentTrack == 1 then
+            switchTrack(2)
+        elseif theWall > canvasWidth*0.6 and Music.currentTrack == 2 then
+            switchTrack(3)
+            alarm = true
+        end
     else
+        theWall = theWall - wallHit * wallHit * dt * 15
         wallHit = wallHit - dt
-        theWall = theWall - wallHit * dt * wallSpeed
         if theWall < 0 then
             theWall = 0
             wallHit = 0
             wallSpeed = wallSpeed * 1.5
+        end
+    end
+
+    -- Music
+    if Music.currentTrack ~= Music.targetTrack then
+        Music[Music.currentTrack]:setVolume(1-fadeProgress)
+        Music[Music.targetTrack]:setVolume(fadeProgress)
+        fadeProgress = fadeProgress - dt
+        if fadeProgress <= 0 then
+            fadeProgress = 0
+            Music[Music.currentTrack]:setVolume(1)
+            Music[Music.targetTrack]:setVolume(0)
         end
     end
 
@@ -264,7 +349,9 @@ function addStructure(x,y,structType,unfinished)
     local struct = {
         x=x,y=y,type=structType,
         health=0,
-        unfinished=unfinished
+        unfinished=unfinished,
+        frame=1,
+        damaging=false
     }
     local info = StructInfo[structType]
     if info then
@@ -282,7 +369,8 @@ function addStructure(x,y,structType,unfinished)
         table.insert(structures,1,struct)
     else
         for i=1,#structures do
-            if structures[i].y < struct.y then
+            local next = structures[i+1]
+            if structures[i].y < struct.y and (not next or (next.y > struct.y))then
                 table.insert(structures,i+1,struct)
                 break
             end
@@ -306,7 +394,7 @@ end
 
 function summonScrap()
     for i=1,3 do
-        addStructure(love.math.random(24,500),love.math.random(24,500),'scrap')
+        local scrap = addStructure(love.math.random(24,getWallX()-32),love.math.random(48,canvasHeight-48),'scrap')
     end
 end
 
@@ -328,11 +416,6 @@ function love.draw()
     love.graphics.setBlendMode("alpha")
     --- START NORMAL DRAWING ---
 
-    love.graphics.print("TIME: " .. tostring(timeAlive),8,8)
-    love.graphics.print("speed: " .. tostring(wallSpeed),8,24)
-    love.graphics.print("Build Progress: " .. tostring(player.buildProgress),8,40)
-    love.graphics.print("Scrap: " .. tostring(player.scrapCount),8,56)
-
     -- draw structures
     local playerDrawn = false
     if #structures == 0 or player.y < structures[1].y then
@@ -343,7 +426,7 @@ function love.draw()
     for i=1,#structures do
 
         local struct = structures[i]
-        drawStruct(struct)
+        drawStruct(struct,i)
         
         local nextStruct = i ~= #structures and structures[i+1] or nil
         if not playerDrawn and (not nextStruct or (player.y > struct.y and player.y < nextStruct.y)) then
@@ -354,7 +437,75 @@ function love.draw()
     end
 
     -- Draw the wall
+    love.graphics.setColor(0,0,0)
     love.graphics.rectangle('fill',getWallX(),0,theWall,canvasHeight)
+    love.graphics.setColor(44/255,53/255,77/255)
+    for j=1,2 do
+        local yoff = j == 2 and -10 or 0
+        for i=1,8 do
+            local dir = i % 2 == 0 and 1 or -1
+            local offset = i % 2 == 0 and 1 or 0
+            local gx ,gy = 0, 0
+            if wallHit > 0 then
+                gx = love.math.random(-2,2)
+                gy = love.math.random(-2,2)
+            end
+            love.graphics.draw(GearTex,getWallX()+60+gx,(i-1)*50+yoff+gy,timeAlive*dir+offset,1,1,30,30)
+        end
+        love.graphics.setColor(64/255,73/255,115/255)
+    end
+    love.graphics.setColor(1,1,1)
+    for i=1,3 do
+        love.graphics.draw(WallTex,getWallX(),(i-1)*148)
+    end
+
+    -- Uh oh sisters!
+    if true or alarm then
+        local a = math.abs(math.sin(timeAlive))
+        love.graphics.setColor(1,0,0,a*0.2+0.1)
+        love.graphics.setBlendMode('add')
+        love.graphics.rectangle('fill',-64,-64,canvasWidth+64,canvasHeight+64)
+        love.graphics.setColor(1,1,1)
+        love.graphics.setBlendMode('alpha')
+    end
+
+    -- Draw tooltip
+    if player.hoverStruct then
+        local tooltip = "[space] - "
+        if player.hoverStruct.unfinished then
+            tooltip = tooltip .. "Build structure"
+        elseif player.hoverStruct.type == 'scrap' then
+            tooltip = tooltip .. "Harvest Scrap"
+        elseif player.hoverStruct.type == 'button' then
+            tooltip = tooltip .. "Pull scrap lever"
+        end
+
+        love.graphics.setFont(Fonts.monogram)
+
+        love.graphics.setColor(0,0,0,0.5)
+        local w = Fonts.monogram:getWidth(tooltip) + 4
+        local tx = player.x - w/2
+        local ty = player.y-48
+        if tx < 8 then
+            tx = 8
+        elseif tx + w >= getWallX() - 8 then
+            tx = getWallX() - 8 - w
+        end
+        if ty < 32 then ty = 32 end
+
+        love.graphics.rectangle('fill',tx,ty,w,16)
+
+        love.graphics.setColor(1,1,1)
+        if player.buildProgress > 0 then
+            love.graphics.line(tx,ty+16,tx+(w*player.buildProgress*player.buildProgress),ty+16)
+        end
+
+        love.graphics.printf(tooltip,tx+w/2-128,ty,256,'center')
+    end
+
+    -- HUD
+    love.graphics.print("TIME: " .. tostring(timeAlive),8,8)
+    love.graphics.print("Scrap: " .. tostring(player.scrapCount),8,24)
 
     --- END NORMAL DRAWING ---
     love.graphics.setCanvas()
@@ -363,33 +514,52 @@ function love.draw()
     love.graphics.draw(mainCanvas,0,0,0,2,2)
 end
 
-function drawStruct(struct)
+function drawStruct(struct,idx)
 
     -- extra drawing
     if not struct.unfinished then
         if struct.type == 'laser' then
             love.graphics.setColor(1,0,0)
-            local h = love.math.random(8,12)
-            love.graphics.rectangle('fill',struct.x+130,struct.y-h/2+32,canvasWidth,h)
-            love.graphics.circle('fill',getWallX(),struct.y-h/2+32,8+h)
+            local h = love.math.random(4,7)
+            love.graphics.rectangle('fill',struct.x+20,struct.y-31+(4-h/2),canvasWidth-struct.x-theWall,h)
+            love.graphics.circle('fill',getWallX(),struct.y-31+h/2,h*1.5)
+            love.graphics.setColor(1,1,1)
+            h = h * 0.25
+            love.graphics.rectangle('fill',struct.x+20,struct.y-31+2+(2-h/2),canvasWidth-struct.x-theWall,h)
+            love.graphics.circle('fill',getWallX(),struct.y-31+2+h/2,h)
         end
     end
 
     love.graphics.setColor(1,1,1)
-    local tex = StructureTextures[struct.type]
+    local sprite = StructureSprites[struct.type]
+    local frame = struct.frame
     if struct.unfinished then
         -- draw unfinished structures as silouhettes
         love.graphics.setColor(0,0,0,0.5)
+        frame = 1
     end
-    if tex then
-        love.graphics.draw(tex,struct.x,struct.y,0,1,1,struct.ox,struct.oy)
-    else
-        print(struct.type,struct.becomes)
-    end
+    if sprite then
+        local y = struct.y
+        local x = struct.x
+        if struct.damaging then
+            x = x + love.math.random(-1,1)
+            y = y + love.math.random(-1,1)
 
+            local maxHealth = StructInfo[struct.type].health
+            local healthPercent = struct.health/maxHealth
+            love.graphics.setColor(0,0,0)
+            love.graphics.line(struct.x-struct.width*0.5,struct.y+8,struct.x+struct.width*0.5,struct.y+8)
+            love.graphics.setColor(1,0,0)
+            love.graphics.line(struct.x-struct.width*0.5,struct.y+8,struct.x+(struct.width*(healthPercent-0.5)),struct.y+8)
+            love.graphics.setColor(1,1,1)
+        end
+        if frame > #sprite.frames then frame = #sprite.frames end
+        love.graphics.draw(sprite.sprite,sprite.frames[math.floor(frame)],x,y,0,1,1,struct.ox,struct.oy)
+    end
 end
 
 function drawPlayer()
+    love.graphics.setColor(1,1,1)
     local sprite = PlayerSprites.right
     local flip = false
 

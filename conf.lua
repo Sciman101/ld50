@@ -5,7 +5,7 @@ function love.conf(t)
     t.gammacorrect = false              -- Enable gamma-correct rendering, when supported by the system (boolean)
     t.console = true
 
-    t.window.title = "Untitled"         -- The window title (string)
+    t.window.title = "Ludum Dare 50"         -- The window title (string)
     t.window.icon = nil                 -- Filepath to an image to use as the window's icon (string)
     t.window.width = 1280                -- The window width (number)
     t.window.height = 720               -- The window height (number)

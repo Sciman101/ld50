@@ -1,0 +1,10 @@
+name = "ld50"
+default_targets = ["lovejs"]
+build_directory = "build"
+
+love_files = [
+    "::git-ls-tree::",
+    "-*/.*",
+]
+
+love_version = "11.3"
