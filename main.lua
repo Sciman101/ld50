@@ -6,7 +6,7 @@ local mainCanvas, canvasWidth, canvasHeight
 -- Import resources and constants
 require 'constants'
 
-local STARTING_WALL_SPEED = 500
+local STARTING_WALL_SPEED = 10
 local theWall = 0
 local wallHit = 0
 local wallMin = 0
@@ -17,6 +17,7 @@ local stats = {
     structures = 0
 }
 
+local titleScreen = true
 local timeAlive = 0
 local alarm = false
 local gameoverString = ""
@@ -55,16 +56,16 @@ function love.load()
     timeAlive = 0
     alarm = false
 
+    titleScreen = true
+
     structures={}
 
     -- load some initial scrap
-    summonScrap()
     addStructure(0,canvasHeight/2+24,'button')
 
     -- Start music
     for i=1,3 do
         Music[i]:stop()
-        Music[i]:play()
         Music[i]:setVolume(0)
         Music[i]:setLooping(true)
     end
@@ -73,6 +74,7 @@ end
 
 -- try and place a structure
 function love.keypressed(key,code,isrepeat)
+    if titleScreen then return end
     if not player.dead and BuildInfo[key] then
         local build = BuildInfo[key]
         if player.scrapCount >= build.cost then
@@ -89,13 +91,22 @@ function getWallX()
     return canvasWidth-theWall
 end
 
+function startGame()
+    summonScrap()
+    for i=1,3 do
+        Music[i]:play()
+    end
+    switchTrack(1)
+    titleScreen = false
+end
+
 function kill()
     --love.event.quit()
     player.dead = true
     Sfx.progress:stop()
     player.buildProgress = 0
     switchTrack(1)
-    
+
     local min = math.floor(timeAlive/60)
     local sec = math.floor(timeAlive-min*60)
     local timeString = string.format("%02d:%02d",min,sec)
@@ -155,37 +166,44 @@ function love.update(dt)
 
         -- build
         if love.keyboard.isDown('space') then
-            if player.hoverStruct then
+            if player.hoverStruct or titleScreen then
                 player.buildProgress = player.buildProgress + dt * 0.5
                 if not Sfx.progress:isPlaying() then
                     Sfx.progress:play()
                 end
 
-                if player.hoverStruct.type == 'button' then
-                    player.hoverStruct.frame = player.buildProgress * 4 + 2
-                end
-
-                -- check for building completion
-                if player.buildProgress >= 1 then
-
-                    if player.hoverStruct.unfinished then
-                        player.hoverStruct.unfinished = false
-                        stats.structures = stats.structures + 1
-
-                    elseif player.hoverStruct.type == 'scrap' then
-                        -- destroy and award
-                        removeStructure(player.hoverStruct)
-                        player.scrapCount = player.scrapCount + 3
-                        stats.totalScrap = stats.totalScrap + 3
-                    
-                    elseif player.hoverStruct.type == 'button' then
-                        summonScrap()
-                        addScreenShake(0.2,1)
+                if not titleScreen then
+                    if player.hoverStruct.type == 'button' then
+                        player.hoverStruct.frame = player.buildProgress * 4 + 2
                     end
 
-                    player.hoverStruct = nil
-                    player.buildProgress = 0
-                    Sfx.progress:stop()
+                    -- check for building completion
+                    if player.buildProgress >= 1 then
+
+                        if player.hoverStruct.unfinished then
+                            player.hoverStruct.unfinished = false
+                            stats.structures = stats.structures + 1
+
+                        elseif player.hoverStruct.type == 'scrap' then
+                            -- destroy and award
+                            removeStructure(player.hoverStruct)
+                            player.scrapCount = player.scrapCount + 3
+                            stats.totalScrap = stats.totalScrap + 3
+                        
+                        elseif player.hoverStruct.type == 'button' then
+                            summonScrap()
+                            addScreenShake(0.2,1)
+                        end
+
+                        player.hoverStruct = nil
+                        player.buildProgress = 0
+                        Sfx.progress:stop()
+                    end
+                else
+                    if player.buildProgress >= 1 then
+                        startGame()
+                        player.buildProgress = 0
+                    end
                 end
             end
         else
@@ -247,7 +265,7 @@ function love.update(dt)
 
         -- overlap the player
         if not player.hoverStruct then
-            if struct.unfinished or (struct.type == 'scrap' and struct.falling <= 0) or struct.type=='button' then
+            if struct.unfinished or (struct.type == 'scrap' and struct.falling <= 0) or (struct.type=='button' and not titleScreen) then
                 -- check for player overlap
                 if player.x > struct.x-struct.ox and player.y > struct.y-struct.oy+struct.height*0.5 and player.x < struct.x + struct.width - struct.ox and player.y < struct.y - struct.oy + struct.height*1.5 then
                     player.hoverStruct = struct
@@ -291,7 +309,7 @@ function love.update(dt)
     end
 
     -- Increment time
-    if not player.dead then
+    if not player.dead and not titleScreen then
         timeAlive = timeAlive + dt
     end
 
@@ -301,25 +319,27 @@ function love.update(dt)
     end
 
     -- move in the wall
-    if wallHit <= 0 then
-        theWall = theWall + wallSpeed * dt * speedMod
-        wallSpeed = wallSpeed + dt * 0.05
+    if not titleScreen then
+        if wallHit <= 0 then
+            theWall = theWall + wallSpeed * dt * speedMod
+            wallSpeed = wallSpeed + dt * 0.05
 
-        if theWall > canvasWidth*0.3 and Music.currentTrack == 1 then
-            switchTrack(2)
-            wallMin = theWall
-        elseif theWall > canvasWidth*0.6 and Music.currentTrack == 2 then
-            switchTrack(3)
-            alarm = true
-            wallMin = theWall
-        end
-    else
-        theWall = theWall - wallHit * wallHit * dt * 15
-        wallHit = wallHit - dt
-        if theWall < wallMin then
-            theWall = wallMin
-            wallHit = 0
-            wallSpeed = wallSpeed * 1.5
+            if theWall > canvasWidth*0.3 and Music.currentTrack == 1 then
+                switchTrack(2)
+                wallMin = theWall
+            elseif theWall > canvasWidth*0.6 and Music.currentTrack == 2 then
+                switchTrack(3)
+                alarm = true
+                wallMin = theWall
+            end
+        else
+            theWall = theWall - wallHit * wallHit * dt * 15
+            wallHit = wallHit - dt
+            if theWall < wallMin then
+                theWall = wallMin
+                wallHit = 0
+                wallSpeed = wallSpeed * 1.5
+            end
         end
     end
 
@@ -473,9 +493,11 @@ function love.draw()
     end
 
     -- Draw tooltip
-    if not player.dead and player.hoverStruct then
+    if not player.dead and (player.hoverStruct or titleScreen) then
         local tooltip = "[space] - "
-        if player.hoverStruct.unfinished then
+        if titleScreen then
+            tooltip = "Hold [space] to start"
+        elseif player.hoverStruct.unfinished then
             tooltip = tooltip .. "Build structure"
         elseif player.hoverStruct.type == 'scrap' then
             tooltip = tooltip .. "Harvest Scrap"
@@ -508,48 +530,50 @@ function love.draw()
 
     -- HUD
     if not player.dead then
-        love.graphics.push()
-        if player.y < 128 and player.x < 256 then
-            love.graphics.translate(0,canvasHeight-72)
-        end
-
-        -- Time
-        local min = math.floor(timeAlive/60)
-        local sec = math.floor(timeAlive-min*60)
-        local timeString = string.format("%02d:%02d",min,sec)
-        local tw = Fonts.sevenseg:getWidth(timeString)
-
-        love.graphics.setColor(0,0,0,0.5)
-        love.graphics.setFont(Fonts.sevenseg)
-        love.graphics.rectangle('fill',6,6,tw+6,36)
-        love.graphics.setColor(1,0,0)
-        love.graphics.print(timeString,8,8)
-        -- Scrap
-        love.graphics.setFont(Fonts.monogram)
-        local scrapString = "Scrap: " .. tostring(player.scrapCount)
-        local sw = Fonts.monogram:getWidth(scrapString)
-        love.graphics.setColor(0,0,0,0.5)
-        love.graphics.rectangle('fill',6,44,sw+6,18)
-        love.graphics.setColor(1,1,1)
-        love.graphics.print(scrapString,9,46)
-        -- 'Shop'
-        for i=1,#ShopInfo do
-            local shopString = ShopInfo[i]
-            local unavailable = false
-            if player.scrapCount < BuildInfo[BuildKeys[i]].cost then
-                unavailable = true
+        if not titleScreen then
+            love.graphics.push()
+            if player.y < 128 and player.x < 256 then
+                love.graphics.translate(0,canvasHeight-72)
             end
+
+            -- Time
+            local min = math.floor(timeAlive/60)
+            local sec = math.floor(timeAlive-min*60)
+            local timeString = string.format("%02d:%02d",min,sec)
+            local tw = Fonts.sevenseg:getWidth(timeString)
+
             love.graphics.setColor(0,0,0,0.5)
-            love.graphics.rectangle('fill',86,6+(i-1)*20,Fonts.monogram:getWidth(shopString)+6,18)
-            if unavailable then
-                love.graphics.setColor(0.5,0.5,0.5)
-            else
-                love.graphics.setColor(1,1,1)
+            love.graphics.setFont(Fonts.sevenseg)
+            love.graphics.rectangle('fill',6,6,tw+6,36)
+            love.graphics.setColor(1,0,0)
+            love.graphics.print(timeString,8,8)
+            -- Scrap
+            love.graphics.setFont(Fonts.monogram)
+            local scrapString = "Scrap: " .. tostring(player.scrapCount)
+            local sw = Fonts.monogram:getWidth(scrapString)
+            love.graphics.setColor(0,0,0,0.5)
+            love.graphics.rectangle('fill',6,44,sw+6,18)
+            love.graphics.setColor(1,1,1)
+            love.graphics.print(scrapString,9,46)
+            -- 'Shop'
+            for i=1,#ShopInfo do
+                local shopString = ShopInfo[i]
+                local unavailable = false
+                if player.scrapCount < BuildInfo[BuildKeys[i]].cost then
+                    unavailable = true
+                end
+                love.graphics.setColor(0,0,0,0.5)
+                love.graphics.rectangle('fill',86,6+(i-1)*20,Fonts.monogram:getWidth(shopString)+6,18)
+                if unavailable then
+                    love.graphics.setColor(0.5,0.5,0.5)
+                else
+                    love.graphics.setColor(1,1,1)
+                end
+                love.graphics.print(shopString,86,8+(i-1)*20)
             end
-            love.graphics.print(shopString,86,8+(i-1)*20)
-        end
 
-        love.graphics.pop()
+            love.graphics.pop()
+        end
     else
     -- Death screen
         love.graphics.setColor(1,1,1)

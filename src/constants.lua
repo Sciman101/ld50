@@ -44,7 +44,7 @@ BuildInfo = {
         type='block'
     },
     e = {
-        cost=4,
+        cost=6,
         type='rocket'
     }
 }
