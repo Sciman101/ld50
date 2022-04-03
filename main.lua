@@ -6,14 +6,20 @@ local mainCanvas, canvasWidth, canvasHeight
 -- Import resources and constants
 require 'constants'
 
+local STARTING_WALL_SPEED = 500
 local theWall = 0
 local wallHit = 0
 local wallMin = 0
-local wallSpeed = 50
-local player = {x=80, y=80, spd=160, hoverStruct=nil, buildProgress=0, scrapCount=0, dir=0, frame=1, wasMoving=false, dead=false}
+local wallSpeed = STARTING_WALL_SPEED
+local player = {x=0, y=0, spd=160, hoverStruct=nil, buildProgress=0, scrapCount=0, dir=0, frame=1, wasMoving=false, dead=false}
+local stats = {
+    totalScrap = 0,
+    structures = 0
+}
 
 local timeAlive = 0
 local alarm = false
+local gameoverString = ""
 
 local screenshake={duration=0,intensity=0}
 
@@ -22,9 +28,34 @@ local structures = {}
 function love.load()
 
     -- setup canvas
-	canvasWidth = love.graphics.getWidth()/2
-	canvasHeight = love.graphics.getHeight()/2
-    mainCanvas = love.graphics.newCanvas(canvasWidth,canvasHeight)
+    if not mainCanvas then
+        canvasWidth = love.graphics.getWidth()/2
+        canvasHeight = love.graphics.getHeight()/2
+        mainCanvas = love.graphics.newCanvas(canvasWidth,canvasHeight)
+    end
+
+    -- Initialize
+    player.x = canvasWidth/2-64
+    player.y = canvasHeight/2
+    player.hoverStruct = nil
+    player.buildProgress = 0
+    player.scrapCount = 0
+    player.dir = 0
+    player.frame = 1
+    player.wasMoving = false
+    player.dead = false
+    
+    stats.totalScrap = 0
+    stats.structures = 0
+
+    theWall = 0
+    wallHit = 0
+    wallMin = 0
+    wallSpeed = STARTING_WALL_SPEED
+    timeAlive = 0
+    alarm = false
+
+    structures={}
 
     -- load some initial scrap
     summonScrap()
@@ -32,6 +63,7 @@ function love.load()
 
     -- Start music
     for i=1,3 do
+        Music[i]:stop()
         Music[i]:play()
         Music[i]:setVolume(0)
         Music[i]:setLooping(true)
@@ -41,12 +73,15 @@ end
 
 -- try and place a structure
 function love.keypressed(key,code,isrepeat)
-    if BuildInfo[key] then
+    if not player.dead and BuildInfo[key] then
         local build = BuildInfo[key]
         if player.scrapCount >= build.cost then
             player.scrapCount = player.scrapCount - build.cost
             local struct = addStructure(player.x,player.y,build.type,true)
         end
+    end
+    if player.dead and key == 'r' then
+        love.load()
     end
 end
 
@@ -60,6 +95,11 @@ function kill()
     Sfx.progress:stop()
     player.buildProgress = 0
     switchTrack(1)
+    
+    local min = math.floor(timeAlive/60)
+    local sec = math.floor(timeAlive-min*60)
+    local timeString = string.format("%02d:%02d",min,sec)
+    gameoverString = "Game Over\nYou lasted " .. timeString .. ",\n Harvested " .. tostring(stats.totalScrap) .. " scrap,\nAnd built " .. tostring(stats.structures) .. " structures\n\nPress 'r' to restart.\nEnjoy the rest of the jam!"
 end
 
 function switchTrack(track)
@@ -130,11 +170,13 @@ function love.update(dt)
 
                     if player.hoverStruct.unfinished then
                         player.hoverStruct.unfinished = false
+                        stats.structures = stats.structures + 1
 
                     elseif player.hoverStruct.type == 'scrap' then
                         -- destroy and award
                         removeStructure(player.hoverStruct)
                         player.scrapCount = player.scrapCount + 3
+                        stats.totalScrap = stats.totalScrap + 3
                     
                     elseif player.hoverStruct.type == 'button' then
                         summonScrap()
@@ -465,53 +507,54 @@ function love.draw()
     end
 
     -- HUD
-    love.graphics.push()
-    if player.y < 128 and player.x < 256 then
-        love.graphics.translate(0,canvasHeight-72)
-    end
-
-    -- Time
-    local min = math.floor(timeAlive/60)
-    local sec = math.floor(timeAlive-min*60)
-    local timeString = string.format("%02d:%02d",min,sec)
-    local tw = Fonts.sevenseg:getWidth(timeString)
-
-    love.graphics.setColor(0,0,0,0.5)
-    love.graphics.setFont(Fonts.sevenseg)
-    love.graphics.rectangle('fill',6,6,tw+6,36)
-    love.graphics.setColor(1,0,0)
-    love.graphics.print(timeString,8,8)
-    -- Scrap
-    love.graphics.setFont(Fonts.monogram)
-    local scrapString = "Scrap: " .. tostring(player.scrapCount)
-    local sw = Fonts.monogram:getWidth(scrapString)
-    love.graphics.setColor(0,0,0,0.5)
-    love.graphics.rectangle('fill',6,44,sw+6,18)
-    love.graphics.setColor(1,1,1)
-    love.graphics.print(scrapString,9,46)
-    -- 'Shop'
-    for i=1,#ShopInfo do
-        local shopString = ShopInfo[i]
-        local unavailable = false
-        if player.scrapCount < BuildInfo[BuildKeys[i]].cost then
-            unavailable = true
+    if not player.dead then
+        love.graphics.push()
+        if player.y < 128 and player.x < 256 then
+            love.graphics.translate(0,canvasHeight-72)
         end
+
+        -- Time
+        local min = math.floor(timeAlive/60)
+        local sec = math.floor(timeAlive-min*60)
+        local timeString = string.format("%02d:%02d",min,sec)
+        local tw = Fonts.sevenseg:getWidth(timeString)
+
         love.graphics.setColor(0,0,0,0.5)
-        love.graphics.rectangle('fill',86,6+(i-1)*20,Fonts.monogram:getWidth(shopString)+6,18)
-        if unavailable then
-            love.graphics.setColor(0.5,0.5,0.5)
-        else
-            love.graphics.setColor(1,1,1)
-        end
-        love.graphics.print(shopString,86,8+(i-1)*20)
-    end
-
-    love.graphics.pop()
-
-    -- Death screen
-    if player.dead then
-        love.graphics.setColor(1,1,1)
         love.graphics.setFont(Fonts.sevenseg)
+        love.graphics.rectangle('fill',6,6,tw+6,36)
+        love.graphics.setColor(1,0,0)
+        love.graphics.print(timeString,8,8)
+        -- Scrap
+        love.graphics.setFont(Fonts.monogram)
+        local scrapString = "Scrap: " .. tostring(player.scrapCount)
+        local sw = Fonts.monogram:getWidth(scrapString)
+        love.graphics.setColor(0,0,0,0.5)
+        love.graphics.rectangle('fill',6,44,sw+6,18)
+        love.graphics.setColor(1,1,1)
+        love.graphics.print(scrapString,9,46)
+        -- 'Shop'
+        for i=1,#ShopInfo do
+            local shopString = ShopInfo[i]
+            local unavailable = false
+            if player.scrapCount < BuildInfo[BuildKeys[i]].cost then
+                unavailable = true
+            end
+            love.graphics.setColor(0,0,0,0.5)
+            love.graphics.rectangle('fill',86,6+(i-1)*20,Fonts.monogram:getWidth(shopString)+6,18)
+            if unavailable then
+                love.graphics.setColor(0.5,0.5,0.5)
+            else
+                love.graphics.setColor(1,1,1)
+            end
+            love.graphics.print(shopString,86,8+(i-1)*20)
+        end
+
+        love.graphics.pop()
+    else
+    -- Death screen
+        love.graphics.setColor(1,1,1)
+        love.graphics.setFont(Fonts.monogram)
+        love.graphics.printf(gameoverString,0,canvasHeight/2-64,canvasWidth,'center')
     end
 
     love.graphics.pop()
