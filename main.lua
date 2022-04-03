@@ -8,11 +8,14 @@ require 'constants'
 
 local theWall = 0
 local wallHit = 0
-local wallSpeed = 5
-local player = {x=80, y=80, spd=160, hoverStruct=nil, buildProgress=0, scrapCount=50, dir=0, frame=1, wasMoving=false}
+local wallMin = 0
+local wallSpeed = 50
+local player = {x=80, y=80, spd=160, hoverStruct=nil, buildProgress=0, scrapCount=0, dir=0, frame=1, wasMoving=false, dead=false}
 
 local timeAlive = 0
-local alarm = true
+local alarm = false
+
+local screenshake={duration=0,intensity=0}
 
 local structures = {}
 
@@ -52,7 +55,11 @@ function getWallX()
 end
 
 function kill()
-    love.event.quit()
+    --love.event.quit()
+    player.dead = true
+    Sfx.progress:stop()
+    player.buildProgress = 0
+    switchTrack(1)
 end
 
 function switchTrack(track)
@@ -62,80 +69,88 @@ function switchTrack(track)
     end
 end
 
+function addScreenShake(duration,intensity)
+    screenshake.duration = duration
+    screenshake.intensity = intensity
+end
+
 function love.update(dt)
 
     local speedMod = 1
 
     -- move player
-    local moving = false
-    if love.keyboard.isDown('right') then 
-        player.x = player.x + player.spd * dt
-        player.dir = 0
-        moving = true
-    end
-    if love.keyboard.isDown('left') then 
-        player.x = player.x - player.spd * dt
-        player.dir = 2
-        moving = true
-    end
-    if love.keyboard.isDown('up') then
-        player.y = player.y - player.spd * dt
-        player.dir = 3
-        moving = true
-    end
-    if love.keyboard.isDown('down') then
-        player.y = player.y + player.spd * dt
-        player.dir = 1
-        moving = true
-    end
-    if moving and not player.wasMoving then
-        player.frame = 2
-    end
-    player.wasMoving = moving
-    -- animate
-    if moving then
-        player.frame = player.frame + dt * 10
-        if player.frame >= 5 then player.frame = 1 end
-    else
-        player.frame = 1
-    end
+    if not player.dead then
+        local moving = false
+        if love.keyboard.isDown('right') then 
+            player.x = player.x + player.spd * dt
+            player.dir = 0
+            moving = true
+        end
+        if love.keyboard.isDown('left') then 
+            player.x = player.x - player.spd * dt
+            player.dir = 2
+            moving = true
+        end
+        if love.keyboard.isDown('up') then
+            player.y = player.y - player.spd * dt
+            player.dir = 3
+            moving = true
+        end
+        if love.keyboard.isDown('down') then
+            player.y = player.y + player.spd * dt
+            player.dir = 1
+            moving = true
+        end
+        if moving and not player.wasMoving then
+            player.frame = 2
+        end
+        player.wasMoving = moving
+        -- animate
+        if moving then
+            player.frame = player.frame + dt * 10
+            if player.frame >= 5 then player.frame = 1 end
+        else
+            player.frame = 1
+        end
 
-    -- build
-    if love.keyboard.isDown('space') then
-        if player.hoverStruct then
-            player.buildProgress = player.buildProgress + dt * 0.5
-            if not Sfx.progress:isPlaying() then
-                Sfx.progress:play()
-            end
-
-            if player.hoverStruct.type == 'button' then
-                player.hoverStruct.frame = player.buildProgress * 4 + 2
-            end
-
-            -- check for building completion
-            if player.buildProgress >= 1 then
-
-                if player.hoverStruct.unfinished then
-                    player.hoverStruct.unfinished = false
-
-                elseif player.hoverStruct.type == 'scrap' then
-                    -- destroy and award
-                    removeStructure(player.hoverStruct)
-                    player.scrapCount = player.scrapCount + 3
-                
-                elseif player.hoverStruct.type == 'button' then
-                    summonScrap()
+        -- build
+        if love.keyboard.isDown('space') then
+            if player.hoverStruct then
+                player.buildProgress = player.buildProgress + dt * 0.5
+                if not Sfx.progress:isPlaying() then
+                    Sfx.progress:play()
                 end
 
-                player.hoverStruct = nil
-                player.buildProgress = 0
+                if player.hoverStruct.type == 'button' then
+                    player.hoverStruct.frame = player.buildProgress * 4 + 2
+                end
+
+                -- check for building completion
+                if player.buildProgress >= 1 then
+
+                    if player.hoverStruct.unfinished then
+                        player.hoverStruct.unfinished = false
+
+                    elseif player.hoverStruct.type == 'scrap' then
+                        -- destroy and award
+                        removeStructure(player.hoverStruct)
+                        player.scrapCount = player.scrapCount + 3
+                    
+                    elseif player.hoverStruct.type == 'button' then
+                        summonScrap()
+                        addScreenShake(0.2,1)
+                    end
+
+                    player.hoverStruct = nil
+                    player.buildProgress = 0
+                    Sfx.progress:stop()
+                end
+            end
+        else
+            player.buildProgress = 0
+            if Sfx.progress:isPlaying() then
                 Sfx.progress:stop()
             end
-        end
-    else
-        player.buildProgress = 0
-        if Sfx.progress:isPlaying() then
-            Sfx.progress:stop()
         end
     end
 
@@ -161,6 +176,16 @@ function love.update(dt)
             end
         end
 
+        -- Falling scrap
+        if struct.type == 'scrap' and struct.falling > 0 then
+            struct.fallSpeed = struct.fallSpeed + dt * 600
+            struct.falling = struct.falling - dt * struct.fallSpeed
+            if struct.falling < 0 then
+                struct.falling = 0
+                addScreenShake(0.1,1)
+            end
+        end
+
         -- Structure behaviours
         if not struct.unfinished then
             -- laser kill
@@ -180,7 +205,7 @@ function love.update(dt)
 
         -- overlap the player
         if not player.hoverStruct then
-            if struct.unfinished or (struct.type == 'scrap') or struct.type=='button' then
+            if struct.unfinished or (struct.type == 'scrap' and struct.falling <= 0) or struct.type=='button' then
                 -- check for player overlap
                 if player.x > struct.x-struct.ox and player.y > struct.y-struct.oy+struct.height*0.5 and player.x < struct.x + struct.width - struct.ox and player.y < struct.y - struct.oy + struct.height*1.5 then
                     player.hoverStruct = struct
@@ -191,7 +216,7 @@ function love.update(dt)
         -- push or destroy structures
         struct.damaging = false
         if struct.x - struct.ox + struct.width > getWallX() then
-            if struct.type == 'scrap' then
+            if struct.type == 'scrap' or struct.unfinished then
                 -- push
                 struct.x = getWallX() - struct.ox
             else
@@ -202,9 +227,10 @@ function love.update(dt)
                 else
                     -- destroy
                     if struct.type == 'rocket' and not struct.unfinished then
-                        wallHit = 1.5
+                        wallHit = 2
                     end
                     removeStructure(struct)
+                    addScreenShake(0.2,2)
                 end
             end
         end
@@ -223,7 +249,14 @@ function love.update(dt)
     end
 
     -- Increment time
-    timeAlive = timeAlive + dt
+    if not player.dead then
+        timeAlive = timeAlive + dt
+    end
+
+    -- screenshake
+    if screenshake.duration > 0 then
+        screenshake.duration = screenshake.duration - dt
+    end
 
     -- move in the wall
     if wallHit <= 0 then
@@ -232,15 +265,17 @@ function love.update(dt)
 
         if theWall > canvasWidth*0.3 and Music.currentTrack == 1 then
             switchTrack(2)
+            wallMin = theWall
         elseif theWall > canvasWidth*0.6 and Music.currentTrack == 2 then
             switchTrack(3)
             alarm = true
+            wallMin = theWall
         end
     else
         theWall = theWall - wallHit * wallHit * dt * 15
         wallHit = wallHit - dt
-        if theWall < 0 then
-            theWall = 0
+        if theWall < wallMin then
+            theWall = wallMin
             wallHit = 0
             wallSpeed = wallSpeed * 1.5
         end
@@ -266,7 +301,9 @@ function addStructure(x,y,structType,unfinished)
         health=0,
         unfinished=unfinished,
         frame=1,
-        damaging=false
+        damaging=false,
+        falling=0,
+        fallSpeed=0
     }
     local info = StructInfo[structType]
     if info then
@@ -310,6 +347,7 @@ end
 function summonScrap()
     for i=1,3 do
         local scrap = addStructure(love.math.random(24,getWallX()-32),love.math.random(48,canvasHeight-48),'scrap')
+        scrap.falling = scrap.y + 10
     end
 end
 
@@ -330,6 +368,14 @@ function love.draw()
     love.graphics.clear()
     love.graphics.setBlendMode("alpha")
     --- START NORMAL DRAWING ---
+
+    love.graphics.push()
+    if screenshake.duration > 0 then
+        love.graphics.translate(
+            love.math.random(-screenshake.intensity,screenshake.intensity),
+            love.math.random(-screenshake.intensity,screenshake.intensity)
+        )
+    end
 
     -- draw structures
     local playerDrawn = false
@@ -375,8 +421,8 @@ function love.draw()
     end
 
     -- Uh oh sisters!
-    if true or alarm then
-        local a = math.abs(math.sin(timeAlive))
+    if alarm then
+        local a = math.abs(math.sin(timeAlive*1.5))
         love.graphics.setColor(1,0,0,a*0.2+0.1)
         love.graphics.setBlendMode('add')
         love.graphics.rectangle('fill',-64,-64,canvasWidth+64,canvasHeight+64)
@@ -385,7 +431,7 @@ function love.draw()
     end
 
     -- Draw tooltip
-    if player.hoverStruct then
+    if not player.dead and player.hoverStruct then
         local tooltip = "[space] - "
         if player.hoverStruct.unfinished then
             tooltip = tooltip .. "Build structure"
@@ -419,8 +465,56 @@ function love.draw()
     end
 
     -- HUD
-    love.graphics.print("TIME: " .. tostring(timeAlive),8,8)
-    love.graphics.print("Scrap: " .. tostring(player.scrapCount),8,24)
+    love.graphics.push()
+    if player.y < 128 and player.x < 256 then
+        love.graphics.translate(0,canvasHeight-72)
+    end
+
+    -- Time
+    local min = math.floor(timeAlive/60)
+    local sec = math.floor(timeAlive-min*60)
+    local timeString = string.format("%02d:%02d",min,sec)
+    local tw = Fonts.sevenseg:getWidth(timeString)
+
+    love.graphics.setColor(0,0,0,0.5)
+    love.graphics.setFont(Fonts.sevenseg)
+    love.graphics.rectangle('fill',6,6,tw+6,36)
+    love.graphics.setColor(1,0,0)
+    love.graphics.print(timeString,8,8)
+    -- Scrap
+    love.graphics.setFont(Fonts.monogram)
+    local scrapString = "Scrap: " .. tostring(player.scrapCount)
+    local sw = Fonts.monogram:getWidth(scrapString)
+    love.graphics.setColor(0,0,0,0.5)
+    love.graphics.rectangle('fill',6,44,sw+6,18)
+    love.graphics.setColor(1,1,1)
+    love.graphics.print(scrapString,9,46)
+    -- 'Shop'
+    for i=1,#ShopInfo do
+        local shopString = ShopInfo[i]
+        local unavailable = false
+        if player.scrapCount < BuildInfo[BuildKeys[i]].cost then
+            unavailable = true
+        end
+        love.graphics.setColor(0,0,0,0.5)
+        love.graphics.rectangle('fill',86,6+(i-1)*20,Fonts.monogram:getWidth(shopString)+6,18)
+        if unavailable then
+            love.graphics.setColor(0.5,0.5,0.5)
+        else
+            love.graphics.setColor(1,1,1)
+        end
+        love.graphics.print(shopString,86,8+(i-1)*20)
+    end
+
+    love.graphics.pop()
+
+    -- Death screen
+    if player.dead then
+        love.graphics.setColor(1,1,1)
+        love.graphics.setFont(Fonts.sevenseg)
+    end
+
+    love.graphics.pop()
 
     --- END NORMAL DRAWING ---
     love.graphics.setCanvas()
@@ -452,10 +546,18 @@ function drawStruct(struct,idx)
         -- draw unfinished structures as silouhettes
         love.graphics.setColor(0,0,0,0.5)
         frame = 1
+    else
+        if struct.type == 'scrap' then
+            love.graphics.setColor(1,1,1)
+            love.graphics.draw(ShadowTex,struct.x-24,struct.y-38)
+        end
     end
     if sprite then
         local y = struct.y
         local x = struct.x
+        if struct.falling > 0 then
+            y = y - struct.falling
+        end
         if struct.damaging then
             x = x + love.math.random(-1,1)
             y = y + love.math.random(-1,1)
@@ -474,6 +576,9 @@ function drawStruct(struct,idx)
 end
 
 function drawPlayer()
+
+    if player.dead then return end
+
     love.graphics.setColor(1,1,1)
     local sprite = PlayerSprites.right
     local flip = false

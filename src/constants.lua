@@ -1,7 +1,8 @@
 local loadStrip = require 'loadStrip'
 
 Fonts = {
-    monogram = love.graphics.newFont("assets/font/monogram.ttf",16)
+    monogram = love.graphics.newFont("assets/font/monogram.ttf",16),
+    sevenseg = love.graphics.newFont('assets/font/Seven Segment.ttf',32)
 }
 
 Music = {
@@ -31,6 +32,7 @@ PlayerSprites = {
 }
 WallTex = love.graphics.newImage('assets/wall/Wall.png')
 GearTex = love.graphics.newImage('assets/wall/Gear.png')
+ShadowTex = love.graphics.newImage('assets/structures/Shadow.png')
 
 BuildInfo = {
     q = {
@@ -46,6 +48,13 @@ BuildInfo = {
         type='rocket'
     }
 }
+BuildKeys = {'q','w','e'}
+ShopInfo = {}
+for i=1,3 do
+    local k = BuildKeys[i]
+    local v = BuildInfo[k]
+    ShopInfo[#ShopInfo+1] = '['..k..'] Place ' .. v.type .. ' (' .. tostring(v.cost) .. ' scrap)'
+end
 StructInfo = {
     scrap = {
         health = 5,
