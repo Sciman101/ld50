@@ -216,7 +216,7 @@ function love.update(dt)
 
     -- clamp player
     if player.x < 16 then player.x = 16 end
-    if player.y < 16 then player.y = 16 end
+    if player.y < 48 then player.y = 48 end
     if player.y > canvasHeight-16 then player.y = canvasHeight-16 end
 
     local prevStruct = player.hoverStruct
@@ -251,7 +251,6 @@ function love.update(dt)
             -- laser kill
             if struct.type == 'laser' then
                 speedMod = speedMod * 0.8
-                if speedMod < 0.1 then speedMod = 0.1 end
                 --[[if player.x > struct.x + 20 and player.y > struct.y-31 and player.y < struct.y - 23 then
                     kill()
                 end]]
@@ -409,7 +408,7 @@ end
 
 function summonScrap()
     for i=1,3 do
-        local scrap = addStructure(love.math.random(24,getWallX()-32),love.math.random(48,canvasHeight-48),'scrap')
+        local scrap = addStructure(love.math.random(48,getWallX()-48),love.math.random(64,canvasHeight-64),'scrap')
         scrap.falling = scrap.y + 10
     end
 end
@@ -545,7 +544,7 @@ function love.draw()
             local timeString = string.format("%02d:%02d",min,sec)
             local tw = Fonts.sevenseg:getWidth(timeString)
 
-            love.graphics.setColor(0,0,0,0.5)
+            love.graphics.setColor(0,0,0,0.9)
             love.graphics.setFont(Fonts.sevenseg)
             love.graphics.rectangle('fill',6,6,tw+6,36)
             love.graphics.setColor(1,0,0)
