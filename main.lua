@@ -6,7 +6,7 @@ local mainCanvas, canvasWidth, canvasHeight
 -- Import resources and constants
 require 'constants'
 
-local STARTING_WALL_SPEED = 10
+local STARTING_WALL_SPEED = 6
 local theWall = 0
 local wallHit = 0
 local wallMin = 0
@@ -36,12 +36,12 @@ function love.load()
     end
 
     -- Initialize
-    player.x = canvasWidth/2-64
-    player.y = canvasHeight/2
+    player.x = canvasWidth/2
+    player.y = canvasHeight/2+72
     player.hoverStruct = nil
     player.buildProgress = 0
     player.scrapCount = 0
-    player.dir = 0
+    player.dir = 1
     player.frame = 1
     player.wasMoving = false
     player.dead = false
@@ -250,7 +250,8 @@ function love.update(dt)
         if not struct.unfinished then
             -- laser kill
             if struct.type == 'laser' then
-                speedMod = speedMod * 0.75
+                speedMod = speedMod * 0.8
+                if speedMod < 0.1 then speedMod = 0.1 end
                 --[[if player.x > struct.x + 20 and player.y > struct.y-31 and player.y < struct.y - 23 then
                     kill()
                 end]]
@@ -423,7 +424,7 @@ function love.draw()
     love.graphics.clear(0.4,0.4,0.4)
 
     -- reset color
-    love.graphics.setColor(1,1,1)
+    --love.graphics.setColor(1,1,1)
 
     -- Set scaled canvas
     love.graphics.setCanvas(mainCanvas)
@@ -438,6 +439,8 @@ function love.draw()
             love.math.random(-screenshake.intensity,screenshake.intensity)
         )
     end
+
+    love.graphics.draw(Background,0,0)
 
     -- draw structures
     local playerDrawn = false
@@ -496,7 +499,7 @@ function love.draw()
     if not player.dead and (player.hoverStruct or titleScreen) then
         local tooltip = "[space] - "
         if titleScreen then
-            tooltip = "Hold [space] to start"
+            tooltip = "Arrows to move. Hold [space] to start"
         elseif player.hoverStruct.unfinished then
             tooltip = tooltip .. "Build structure"
         elseif player.hoverStruct.type == 'scrap' then
@@ -573,6 +576,12 @@ function love.draw()
             end
 
             love.graphics.pop()
+        else
+            -- draw title screen
+            love.graphics.setColor(0,0,0,0.5)
+            love.graphics.rectangle('fill',canvasWidth/2-128,canvasHeight/2-72,256,96)
+            love.graphics.setColor(1,1,1)
+            love.graphics.printf('CRUSHING DREAD\nMade for Ludum dare 50\n\nArt+Code - Sciman101\nMusic - LCS',0,canvasHeight/2-64,canvasWidth,'center')
         end
     else
     -- Death screen
@@ -658,5 +667,7 @@ function drawPlayer()
     else
         sprite = PlayerSprites.back
     end
+    love.graphics.setColor(1,1,1)
+    love.graphics.draw(ShadowTex,player.x,player.y-34,0,0.6,1,24,0)
     love.graphics.draw(sprite.sprite,sprite.frames[math.floor(player.frame)],player.x,player.y,0,flip and -1 or 1,1,16,32)
 end

@@ -33,14 +33,15 @@ PlayerSprites = {
 WallTex = love.graphics.newImage('assets/wall/Wall.png')
 GearTex = love.graphics.newImage('assets/wall/Gear.png')
 ShadowTex = love.graphics.newImage('assets/structures/Shadow.png')
+Background = love.graphics.newImage('assets/Background.png')
 
 BuildInfo = {
     q = {
-        cost=2,
+        cost=3,
         type='laser'
     },
     w = {
-        cost=3,
+        cost=4,
         type='block'
     },
     e = {
